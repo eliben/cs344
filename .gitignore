@@ -18,3 +18,10 @@
 
 # OS X stuff
 .DS_Store
+
+CMakeFiles
+tags
+*.cmake
+Makefile
+bin
+CMakeCache*
