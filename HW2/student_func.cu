@@ -104,7 +104,9 @@
 //****************************************************************************
 
 #include "utils.h"
+#include "myutils.h"
 #include <stdio.h>
+#include <iostream>
 
 __global__ void gaussian_blur(const unsigned char* const inputChannel,
                               unsigned char* const outputChannel, int numRows,
@@ -158,8 +160,7 @@ __global__ void separateChannels(const uchar4* const inputImageRGBA,
   greenChannel[offset] = rgba_pixel.y;
   blueChannel[offset] = rgba_pixel.z;
 
-  // printfs cause "too many launch resources errors"
-  printf("at offset %d: %u %u %u\n", offset, redChannel[offset], greenChannel[offset], blueChannel[offset]);
+  /*printf("at offset %d: %u %u %u\n", offset, redChannel[offset], greenChannel[offset], blueChannel[offset]);*/
   /*printf("at offset %d: %u\n", offset, redChannel[offset]);*/
 }
 
@@ -223,7 +224,10 @@ void your_gaussian_blur(const uchar4* const h_inputImageRGBA,
                       1 + (numRows / blockSize.y),
                       1);
 
-  printf("Launching separateChannels grid: %u %u %u\n", gridSize.x, gridSize.y, gridSize.z);
+  // This is for debugging
+  size_t numPixels = numCols * numRows;
+  std::cerr << "Launch separateChannels grid: " << stringify(gridSize) << "\n";
+
   separateChannels<<<gridSize, blockSize>>>(
       d_inputImageRGBA, numRows, numCols,
       d_redBlurred, d_greenBlurred, d_blueBlurred);
@@ -232,6 +236,19 @@ void your_gaussian_blur(const uchar4* const h_inputImageRGBA,
   // launching your kernel to make sure that you didn't make any mistakes.
   cudaDeviceSynchronize();
   checkCudaErrors(cudaGetLastError());
+
+  /*unsigned char* h_redBlurred = new unsigned char[numPixels];*/
+  /*checkCudaErrors(cudaMemcpy(h_redBlurred, d_redBlurred,*/
+                             /*sizeof(unsigned char) * numPixels,*/
+                             /*cudaMemcpyDeviceToHost));*/
+
+  /*std::cerr << "Showing some initial pixels in the image:\n";*/
+  /*for (int i = 0; i < 2000; ++i) {*/
+    /*std::cerr << "Full pixel[" << i << "] = " <<*/
+      /*stringify(h_inputImageRGBA[i]) << ";  ";*/
+    /*std::cerr << "Red channel = "*/
+              /*<< static_cast<unsigned>(h_redBlurred[i]) << "\n";*/
+  /*}*/
 
   // TODO: Call your convolution kernel here 3 times, once for each color
   // channel.
