@@ -159,7 +159,7 @@ __global__ void separateChannels(const uchar4* const inputImageRGBA,
   blueChannel[offset] = rgba_pixel.z;
 
   // printfs cause "too many launch resources errors"
-  /*printf("at offset %d: %u %u %u\n", offset, redChannel[offset], greenChannel[offset], blueChannel[offset]);*/
+  printf("at offset %d: %u %u %u\n", offset, redChannel[offset], greenChannel[offset], blueChannel[offset]);
   /*printf("at offset %d: %u\n", offset, redChannel[offset]);*/
 }
 
@@ -218,7 +218,7 @@ void your_gaussian_blur(const uchar4* const h_inputImageRGBA,
                         const size_t numCols, unsigned char* d_redBlurred,
                         unsigned char* d_greenBlurred,
                         unsigned char* d_blueBlurred, const int filterWidth) {
-  const dim3 blockSize(32, 32, 1);
+  const dim3 blockSize(16, 16, 1);
   const dim3 gridSize(1 + (numCols / blockSize.x),
                       1 + (numRows / blockSize.y),
                       1);
