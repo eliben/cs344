@@ -104,6 +104,7 @@
 //****************************************************************************
 
 #include "utils.h"
+#include "timer.h"
 #include "myutils.h"
 #include <stdio.h>
 #include <iostream>
@@ -236,6 +237,9 @@ void your_gaussian_blur(const uchar4* const h_inputImageRGBA,
   size_t numPixels = numCols * numRows;
   std::cerr << "Launch separateChannels grid: " << stringify(gridSize) << "\n";
 
+  GpuTimer timer;
+  timer.Start();
+
   separateChannels<<<gridSize, blockSize>>>(
       d_inputImageRGBA, numRows, numCols, d_red, d_green, d_blue);
 
@@ -243,6 +247,9 @@ void your_gaussian_blur(const uchar4* const h_inputImageRGBA,
   // launching your kernel to make sure that you didn't make any mistakes.
   cudaDeviceSynchronize();
   checkCudaErrors(cudaGetLastError());
+
+  timer.Stop();
+  std::cerr << "separateChannels elapsed: " << timer.Elapsed() << " ms\n";
 
   /*unsigned char* h_redBlurred = new unsigned char[numPixels];*/
   /*checkCudaErrors(cudaMemcpy(h_redBlurred, d_redBlurred,*/
@@ -257,29 +264,32 @@ void your_gaussian_blur(const uchar4* const h_inputImageRGBA,
               /*<< static_cast<unsigned>(h_redBlurred[i]) << "\n";*/
   /*}*/
 
+  timer.Start();
   // Blur each channel separately
   gaussian_blur<<<gridSize, blockSize>>>(
       d_red, d_redBlurred, numRows, numCols, d_filter, filterWidth);
-  /*cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());*/
 
   gaussian_blur<<<gridSize, blockSize>>>(
       d_green, d_greenBlurred, numRows, numCols, d_filter, filterWidth);
-  /*cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());*/
 
   gaussian_blur<<<gridSize, blockSize>>>(
       d_blue, d_blueBlurred, numRows, numCols, d_filter, filterWidth);
-  /*cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());*/
 
-  // Now we recombine your results. We take care of launching this kernel for
-  // you.
-  //
-  // NOTE: This kernel launch depends on the gridSize and blockSize variables,
-  // which you must set yourself.
+  cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
+
+  timer.Stop();
+  std::cerr << "gaussian_blur (x3) elapsed: " << timer.Elapsed() << " ms\n";
+
+  timer.Start();
+
   recombineChannels<<<gridSize, blockSize>>>
       (d_redBlurred, d_greenBlurred, d_blueBlurred, d_outputImageRGBA, numRows,
        numCols);
   cudaDeviceSynchronize();
   checkCudaErrors(cudaGetLastError());
+
+  timer.Stop();
+  std::cerr << "recombineChannels elapsed: " << timer.Elapsed() << " ms\n";
 }
 
 // Free all the memory that we allocated
