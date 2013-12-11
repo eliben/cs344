@@ -104,11 +104,13 @@ int main(int argc, char **argv) {
                              sizeof(uchar4) * numPixels,
                              cudaMemcpyDeviceToHost));
 
+  std::cerr << "postProcess output...\n";
   postProcess(output_file, h_outputImageRGBA);
 
   referenceCalculation(h_inputImageRGBA, h_outputImageRGBA, numRows(),
                        numCols(), h_filter, filterWidth);
 
+  std::cerr << "postProcess reference...\n";
   postProcess(reference_file, h_outputImageRGBA);
 
   //  Cheater easy way with OpenCV

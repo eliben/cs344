@@ -5,6 +5,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <string>
+#include <iostream>
 
 cv::Mat imageInputRGBA;
 cv::Mat imageOutputRGBA;
@@ -118,8 +119,14 @@ void postProcess(const std::string &output_file, uchar4 *data_ptr) {
 
   cv::Mat imageOutputBGR;
   cv::cvtColor(output, imageOutputBGR, CV_RGBA2BGR);
+
   // output the image
-  cv::imwrite(output_file.c_str(), imageOutputBGR);
+  try {
+    std::cerr << "Output to: " << output_file.c_str() << "\n";
+    cv::imwrite(output_file.c_str(), imageOutputBGR);
+  } catch (cv::Exception& e) {
+    std::cerr << "cv::Exception: " << e.msg << "\n";
+  }
 }
 
 void cleanUp(void) {
