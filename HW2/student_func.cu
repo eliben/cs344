@@ -109,6 +109,51 @@
 #include <stdio.h>
 #include <iostream>
 
+__global__ void blur_shared(const unsigned char* const inputChannel,
+                              unsigned char* const outputChannel, int numRows,
+                              int numCols, const float* const filter,
+                              const int filterWidth) {
+  // Compute the thread's row and column
+  int col = blockIdx.x * blockDim.x + threadIdx.x;
+  int row = blockIdx.y * blockDim.y + threadIdx.y;
+
+  if (col >= numCols || row >= numRows) {
+    return;
+  }
+
+  // First threads in every block copy the filter into shared memory
+  extern __shared__ float sfilter[];
+  if (threadIdx.x < filterWidth && threadIdx.y < filterWidth) {
+    int lin_index = threadIdx.x * filterWidth + threadIdx.y;
+    sfilter[lin_index] = filter[lin_index];
+  }
+  __syncthreads();
+
+  // The following loop walks over all coefficients in the filter
+  float result = 0.0f;
+  for (int row_delta = -filterWidth / 2; row_delta <= filterWidth / 2;
+       row_delta++) {
+    for (int col_delta = -filterWidth / 2; col_delta <= filterWidth / 2;
+         col_delta++) {
+      // Compute the coordinates of the value this coefficient applies to.
+      // Apply clamping to image boundaries.
+      int value_row = min(max(row + row_delta, 0), numRows - 1);
+      int value_col = min(max(col + col_delta, 0), numCols - 1);
+
+      // Compute the partial sum this value adds to the result when scaled by
+      // the appropriate coefficient.
+      float channel_value =
+        static_cast<float>(inputChannel[value_row * numCols + value_col]);
+      float filter_coefficient =
+        sfilter[(row_delta + filterWidth / 2) * filterWidth +
+                (col_delta + filterWidth / 2)];
+      result += channel_value * filter_coefficient;
+    }
+  }
+
+  outputChannel[row * numCols + col] = result;
+}
+
 __global__ void gaussian_blur(const unsigned char* const inputChannel,
                               unsigned char* const outputChannel, int numRows,
                               int numCols, const float* const filter,
@@ -235,7 +280,10 @@ void your_gaussian_blur(const uchar4* const h_inputImageRGBA,
 
   // This is for debugging
   size_t numPixels = numCols * numRows;
-  std::cerr << "Launch separateChannels grid: " << stringify(gridSize) << "\n";
+  std::cerr << "Image dimensions: " << numRows << "x" << numCols << " ("
+            << numPixels << " pixels)\n";
+  std::cerr << "blockSize = " << stringify(blockSize) << "\n";
+  std::cerr << "gridSize = " << stringify(gridSize) << "\n";
 
   GpuTimer timer;
   timer.Start();
@@ -298,4 +346,78 @@ void cleanup() {
   checkCudaErrors(cudaFree(d_red));
   checkCudaErrors(cudaFree(d_green));
   checkCudaErrors(cudaFree(d_blue));
+}
+
+void gaussian_blur_shared(const uchar4* const h_inputImageRGBA,
+                        uchar4* const d_inputImageRGBA,
+                        uchar4* const d_outputImageRGBA, const size_t numRows,
+                        const size_t numCols, unsigned char* d_redBlurred,
+                        unsigned char* d_greenBlurred,
+                        unsigned char* d_blueBlurred, const int filterWidth) {
+  const dim3 blockSize(16, 16, 1);
+  const dim3 gridSize(1 + (numCols / blockSize.x),
+                      1 + (numRows / blockSize.y),
+                      1);
+
+  // This is for debugging
+  size_t numPixels = numCols * numRows;
+  std::cerr << "Image dimensions: " << numRows << "x" << numCols << " ("
+            << numPixels << " pixels)\n";
+  std::cerr << "blockSize = " << stringify(blockSize) << "\n";
+  std::cerr << "gridSize = " << stringify(gridSize) << "\n";
+
+  GpuTimer timer;
+  timer.Start();
+
+  separateChannels<<<gridSize, blockSize>>>(
+      d_inputImageRGBA, numRows, numCols, d_red, d_green, d_blue);
+
+  // Call cudaDeviceSynchronize(), then call checkCudaErrors() immediately after
+  // launching your kernel to make sure that you didn't make any mistakes.
+  cudaDeviceSynchronize();
+  checkCudaErrors(cudaGetLastError());
+
+  timer.Stop();
+  std::cerr << "separateChannels elapsed: " << timer.Elapsed() << " ms\n";
+
+  /*unsigned char* h_redBlurred = new unsigned char[numPixels];*/
+  /*checkCudaErrors(cudaMemcpy(h_redBlurred, d_redBlurred,*/
+                             /*sizeof(unsigned char) * numPixels,*/
+                             /*cudaMemcpyDeviceToHost));*/
+
+  /*std::cerr << "Showing some initial pixels in the image:\n";*/
+  /*for (int i = 0; i < 2000; ++i) {*/
+    /*std::cerr << "Full pixel[" << i << "] = " <<*/
+      /*stringify(h_inputImageRGBA[i]) << ";  ";*/
+    /*std::cerr << "Red channel = "*/
+              /*<< static_cast<unsigned>(h_redBlurred[i]) << "\n";*/
+  /*}*/
+
+  timer.Start();
+  int shared_size = filterWidth * filterWidth * sizeof(*d_filter);
+  // Blur each channel separately
+  blur_shared<<<gridSize, blockSize, shared_size>>>(
+      d_red, d_redBlurred, numRows, numCols, d_filter, filterWidth);
+
+  blur_shared<<<gridSize, blockSize, shared_size>>>(
+      d_green, d_greenBlurred, numRows, numCols, d_filter, filterWidth);
+
+  blur_shared<<<gridSize, blockSize, shared_size>>>(
+      d_blue, d_blueBlurred, numRows, numCols, d_filter, filterWidth);
+
+  cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
+
+  timer.Stop();
+  std::cerr << "gaussian_blur (x3) elapsed: " << timer.Elapsed() << " ms\n";
+
+  timer.Start();
+
+  recombineChannels<<<gridSize, blockSize>>>
+      (d_redBlurred, d_greenBlurred, d_blueBlurred, d_outputImageRGBA, numRows,
+       numCols);
+  cudaDeviceSynchronize();
+  checkCudaErrors(cudaGetLastError());
+
+  timer.Stop();
+  std::cerr << "recombineChannels elapsed: " << timer.Elapsed() << " ms\n";
 }

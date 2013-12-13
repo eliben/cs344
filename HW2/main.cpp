@@ -21,6 +21,13 @@ void your_gaussian_blur(const uchar4 *const h_inputImageRGBA,
                         unsigned char *d_greenBlurred,
                         unsigned char *d_blueBlurred, const int filterWidth);
 
+void gaussian_blur_shared(const uchar4 *const h_inputImageRGBA,
+                        uchar4 *const d_inputImageRGBA,
+                        uchar4 *const d_outputImageRGBA, const size_t numRows,
+                        const size_t numCols, unsigned char *d_redBlurred,
+                        unsigned char *d_greenBlurred,
+                        unsigned char *d_blueBlurred, const int filterWidth);
+
 void allocateMemoryAndCopyToGPU(const size_t numRowsImage,
                                 const size_t numColsImage,
                                 const float *const h_filter,
@@ -42,6 +49,7 @@ int main(int argc, char **argv) {
   double perPixelError = 0.0;
   double globalError = 0.0;
   bool useEpsCheck = false;
+  std::string blur_impl = "hw";
   switch (argc) {
     case 2:
       input_file = std::string(argv[1]);
@@ -58,17 +66,15 @@ int main(int argc, char **argv) {
       output_file = std::string(argv[2]);
       reference_file = std::string(argv[3]);
       break;
-    case 6:
-      useEpsCheck = true;
+    case 5:
       input_file = std::string(argv[1]);
       output_file = std::string(argv[2]);
       reference_file = std::string(argv[3]);
-      perPixelError = atof(argv[4]);
-      globalError = atof(argv[5]);
+      blur_impl = std::string(argv[4]);
       break;
     default:
       std::cerr << "Usage: ./HW2 input_file [output_filename] "
-                   "[reference_filename] [perPixelError] [globalError]"
+                   "[reference_filename] [blur_impl]]"
                 << std::endl;
       exit(1);
   }
@@ -81,9 +87,16 @@ int main(int argc, char **argv) {
   GpuTimer timer;
   timer.Start();
   // call the students' code
-  your_gaussian_blur(h_inputImageRGBA, d_inputImageRGBA, d_outputImageRGBA,
-                     numRows(), numCols(), d_redBlurred, d_greenBlurred,
-                     d_blueBlurred, filterWidth);
+  if (blur_impl == "hw") {
+    your_gaussian_blur(h_inputImageRGBA, d_inputImageRGBA, d_outputImageRGBA,
+                       numRows(), numCols(), d_redBlurred, d_greenBlurred,
+                       d_blueBlurred, filterWidth);
+  } else if (blur_impl == "shared") {
+    gaussian_blur_shared(h_inputImageRGBA, d_inputImageRGBA, d_outputImageRGBA,
+                       numRows(), numCols(), d_redBlurred, d_greenBlurred,
+                       d_blueBlurred, filterWidth);
+  }
+
   timer.Stop();
   cudaDeviceSynchronize();
   checkCudaErrors(cudaGetLastError());
@@ -107,8 +120,11 @@ int main(int argc, char **argv) {
   std::cerr << "postProcess output...\n";
   postProcess(output_file, h_outputImageRGBA);
 
+  timer.Start();
   referenceCalculation(h_inputImageRGBA, h_outputImageRGBA, numRows(),
                        numCols(), h_filter, filterWidth);
+  timer.Stop();
+  std::cerr << "referenceCalculation elapsed: " << timer.Elapsed() << " ms\n";
 
   std::cerr << "postProcess reference...\n";
   postProcess(reference_file, h_outputImageRGBA);
